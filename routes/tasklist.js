@@ -1,4 +1,9 @@
 const TaskDao = require("../models/taskDao");
+const { EventHubProducerClient } = require("@azure/event-hubs");
+
+const sharedAccessKey = process.env.SHARED_ACCESS_KEY || "[The shared access key of your Event Hub]";
+const connectionString = `Endpoint=sb://cidatahub.servicebus.windows.net/;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=${sharedAccessKey}`;
+const eventHubName = "neo";
 
  class TaskList {
    /**
@@ -7,6 +12,7 @@ const TaskDao = require("../models/taskDao");
     */
    constructor(taskDao) {
      this.taskDao = taskDao;
+     this.producer = new EventHubProducerClient(connectionString, eventHubName);
    }
    async showTasks(req, res) {
      const querySpec = {
@@ -27,10 +33,14 @@ const TaskDao = require("../models/taskDao");
    }
 
    async addTask(req, res) {
-     const item = req.body;
+      const item = req.body;
+      await this.taskDao.addItem(item);
 
-     await this.taskDao.addItem(item);
-     res.redirect("/");
+      const batch = await this.producer.createBatch();
+      batch.tryAdd({ body: item });
+      await this.producer.sendBatch(batch);
+
+      res.redirect("/");
    }
 
    async completeTask(req, res) {
